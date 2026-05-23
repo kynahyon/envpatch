@@ -2,6 +2,10 @@ import { GroupedEnvMap, GroupOptions, GroupReport } from './types';
 
 /**
  * Groups an EnvMap by key prefix or explicit group definitions.
+ *
+ * Explicit groups are applied first, then remaining keys are grouped
+ * by their prefix (the substring before the first delimiter character).
+ * Keys with no delimiter are placed in `ungrouped` if `includeUngrouped` is true.
  */
 export function groupEnvMap(
   envMap: Map<string, string>,
@@ -56,6 +60,23 @@ export function flattenGroupedEnvMap(grouped: GroupedEnvMap): Map<string, string
     result.set(key, value);
   }
   return result;
+}
+
+/**
+ * Returns the names of all groups that contain the given key.
+ * Checks both explicit/prefix groups and the ungrouped set.
+ */
+export function findGroupsForKey(grouped: GroupedEnvMap, key: string): string[] {
+  const matches: string[] = [];
+  for (const [name, map] of Object.entries(grouped.groups)) {
+    if (map.has(key)) {
+      matches.push(name);
+    }
+  }
+  if (grouped.ungrouped.has(key)) {
+    matches.push('ungrouped');
+  }
+  return matches;
 }
 
 /**
