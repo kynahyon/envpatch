@@ -29,6 +29,14 @@ describe('createHistoryEntry', () => {
     const entry = createHistoryEntry(makeMap({}));
     expect(entry.label).toMatch(/^snapshot-/);
   });
+
+  it('stores a deep copy of the map so later mutations do not affect the entry', () => {
+    const map = makeMap({ FOO: 'original' });
+    const entry = createHistoryEntry(map, 'copy-test');
+    // Mutate the source map after snapshot
+    map.set('FOO', { key: 'FOO', value: 'mutated', raw: 'FOO=mutated' });
+    expect(entry.entries.get('FOO')?.value).toBe('original');
+  });
 });
 
 describe('pushHistory', () => {
@@ -37,6 +45,12 @@ describe('pushHistory', () => {
     expect(h1.entries).toHaveLength(1);
     const h2 = pushHistory(h1, makeMap({ A: '2' }), 'second');
     expect(h2.entries).toHaveLength(2);
+  });
+
+  it('does not mutate the original history object', () => {
+    const h1 = pushHistory(emptyHistory, makeMap({ A: '1' }), 'first');
+    pushHistory(h1, makeMap({ A: '2' }), 'second');
+    expect(h1.entries).toHaveLength(1);
   });
 });
 
