@@ -1,68 +1,85 @@
-import { filterEnvMap, formatFilterReport } from './envFilter';
-import { EnvMap, EnvEntry } from '../parser/types';
+import { filterEnvMap, formatFilterReport } from "./envFilter";
 
-function makeMap(obj: Record<string, string>): EnvMap {
-  const map: EnvMap = new Map();
-  for (const [key, value] of Object.entries(obj)) {
-    const entry: EnvEntry = { key, value, comment: undefined, raw: `${key}=${value}` };
-    map.set(key, entry);
-  }
-  return map;
+function makeMap(obj: Record<string, string>): Map<string, string> {
+  return new Map(Object.entries(obj));
 }
 
-const sampleMap = makeMap({
-  DB_HOST: 'localhost',
-  DB_PORT: '5432',
-  APP_NAME: 'envpatch',
-  APP_ENV: 'production',
-  SECRET_KEY: 'abc123',
+describe("filterEnvMap", () => {
+  const base = makeMap({
+    DB_HOST: "localhost",
+    DB_PORT: "5432",
+    AWS_KEY: "abc",
+    APP_NAME: "envpatch",
+    DEBUG: "true",
+  });
+
+  it("includes only specified keys", () => {
+    const { filtered, keptKeys, removedKeys } = filterEnvMap(base, {
+      keys: ["DEBUG", "APP_NAME"],
+      mode: "include",
+    });
+    expect([...filtered.keys()].sort()).toEqual(["APP_NAME", "DEBUG"]);
+    expect(keptKeys.sort()).toEqual(["APP_NAME", "DEBUG"]);
+    expect(removedKeys).toHaveLength(3);
+  });
+
+  it("excludes specified keys", () => {
+    const { filtered } = filterEnvMap(base, {
+      keys: ["DEBUG"],
+      mode: "exclude",
+    });
+    expect(filtered.has("DEBUG")).toBe(false);
+    expect(filtered.size).toBe(4);
+  });
+
+  it("includes keys by prefix", () => {
+    const { filtered } = filterEnvMap(base, {
+      prefixes: ["DB_"],
+      mode: "include",
+    });
+    expect([...filtered.keys()].sort()).toEqual(["DB_HOST", "DB_PORT"]);
+  });
+
+  it("excludes keys by prefix", () => {
+    const { filtered } = filterEnvMap(base, {
+      prefixes: ["AWS_", "DB_"],
+      mode: "exclude",
+    });
+    expect([...filtered.keys()].sort()).toEqual(["APP_NAME", "DEBUG"]);
+  });
+
+  it("combines keys and prefixes in include mode", () => {
+    const { filtered } = filterEnvMap(base, {
+      keys: ["DEBUG"],
+      prefixes: ["AWS_"],
+      mode: "include",
+    });
+    expect([...filtered.keys()].sort()).toEqual(["AWS_KEY", "DEBUG"]);
+  });
+
+  it("returns empty map when no matches in include mode", () => {
+    const { filtered } = filterEnvMap(base, {
+      keys: ["NONEXISTENT"],
+      mode: "include",
+    });
+    expect(filtered.size).toBe(0);
+  });
+
+  it("returns full map when no options provided with exclude mode", () => {
+    const { filtered } = filterEnvMap(base, { mode: "exclude" });
+    expect(filtered.size).toBe(base.size);
+  });
 });
 
-describe('filterEnvMap', () => {
-  it('filters by prefix', () => {
-    const result = filterEnvMap(sampleMap, { prefix: 'DB_' });
-    expect(result.matched.size).toBe(2);
-    expect(result.matched.has('DB_HOST')).toBe(true);
-    expect(result.matched.has('DB_PORT')).toBe(true);
-    expect(result.excluded.size).toBe(3);
-  });
-
-  it('filters by suffix', () => {
-    const result = filterEnvMap(sampleMap, { suffix: '_KEY' });
-    expect(result.matched.size).toBe(1);
-    expect(result.matched.has('SECRET_KEY')).toBe(true);
-  });
-
-  it('filters by explicit keys', () => {
-    const result = filterEnvMap(sampleMap, { keys: ['APP_NAME', 'APP_ENV'] });
-    expect(result.matched.size).toBe(2);
-    expect(result.matched.has('APP_NAME')).toBe(true);
-  });
-
-  it('filters by regex pattern', () => {
-    const result = filterEnvMap(sampleMap, { pattern: /^APP_/ });
-    expect(result.matched.size).toBe(2);
-  });
-
-  it('excludes matched keys when exclude=true', () => {
-    const result = filterEnvMap(sampleMap, { prefix: 'DB_', exclude: true });
-    expect(result.matched.size).toBe(3);
-    expect(result.matched.has('APP_NAME')).toBe(true);
-    expect(result.excluded.size).toBe(2);
-  });
-
-  it('returns all keys when no filter criteria match anything specific', () => {
-    const result = filterEnvMap(sampleMap, {});
-    expect(result.matched.size).toBe(sampleMap.size);
-  });
-});
-
-describe('formatFilterReport', () => {
-  it('produces a non-empty report string', () => {
-    const result = filterEnvMap(sampleMap, { prefix: 'APP_' });
+describe("formatFilterReport", () => {
+  it("formats a readable report", () => {
+    const result = filterEnvMap(
+      makeMap({ A: "1", B: "2", C: "3" }),
+      { keys: ["A", "B"], mode: "include" }
+    );
     const report = formatFilterReport(result);
-    expect(report).toContain('Filter Report');
-    expect(report).toContain('Matched  : 2');
-    expect(report).toContain('+ APP_NAME');
+    expect(report).toContain("Filter Report");
+    expect(report).toContain("Kept:");
+    expect(report).toContain("Removed:");
   });
 });
