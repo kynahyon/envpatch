@@ -56,6 +56,14 @@ describe('applyPatch', () => {
     applyPatch(target, source, { dryRun: true });
     expect(target.has('B')).toBe(false);
   });
+
+  it('excludes specified keys from pruning', () => {
+    const target = makeMap({ A: '1', B: '2' });
+    const source = makeMap({ A: '1' });
+    const result = applyPatch(target, source, { prune: true, excludeKeys: ['B'] });
+    expect(result.deletedCount).toBe(0);
+    expect(target.has('B')).toBe(true);
+  });
 });
 
 describe('formatPatchReport', () => {
