@@ -1,77 +1,73 @@
-import { EnvMap } from '../parser/types';
-import { MaskOptions, MaskResult, MaskedEnvMap } from './types';
+import type { EnvMap } from '../parser/types';
+import type { MaskOptions, MaskEntry, MaskReport, MaskResult } from './types';
 
 const DEFAULT_SENSITIVE_PATTERNS = [
-  /password/i,
-  /secret/i,
-  /token/i,
-  /api[_-]?key/i,
-  /private[_-]?key/i,
-  /auth/i,
-  /credential/i,
-  /passwd/i,
+  'SECRET',
+  'PASSWORD',
+  'PASSWD',
+  'TOKEN',
+  'API_KEY',
+  'APIKEY',
+  'PRIVATE',
+  'CREDENTIAL',
+  'AUTH',
+  'ACCESS_KEY',
+  'SIGNING',
 ];
+
+const MASK_CHAR = '*';
 
 export function isSensitiveKey(
   key: string,
-  patterns: RegExp[] = DEFAULT_SENSITIVE_PATTERNS
+  customPatterns: string[] = []
 ): boolean {
-  return patterns.some((pattern) => pattern.test(key));
+  const upper = key.toUpperCase();
+  const patterns = [...DEFAULT_SENSITIVE_PATTERNS, ...customPatterns.map((p) => p.toUpperCase())];
+  return patterns.some((pattern) => upper.includes(pattern));
 }
 
-export function maskValue(
-  value: string,
-  visibleChars: number = 0,
-  maskChar: string = '*'
-): string {
+export function maskValue(value: string, showFirst = 0): string {
   if (value.length === 0) return value;
-  if (visibleChars <= 0) return maskChar.repeat(Math.min(value.length, 8));
-  const visible = value.slice(-visibleChars);
-  const masked = maskChar.repeat(Math.max(value.length - visibleChars, 3));
-  return masked + visible;
+  if (showFirst <= 0) return MASK_CHAR.repeat(Math.min(value.length, 8));
+  const visible = value.slice(0, showFirst);
+  const hidden = MASK_CHAR.repeat(Math.min(value.length - showFirst, 8));
+  return visible + hidden;
 }
 
-export function maskEnvMap(
-  envMap: EnvMap,
-  options: MaskOptions = {}
-): MaskResult {
-  const {
-    patterns = DEFAULT_SENSITIVE_PATTERNS,
-    visibleChars = 0,
-    maskChar = '*',
-    additionalKeys = [],
-  } = options;
+export function maskEnvMap(map: EnvMap, options: MaskOptions = {}): MaskResult {
+  const { showFirst = 0, customPatterns = [] } = options;
+  const maskedMap: EnvMap = new Map();
+  const maskedKeys: MaskEntry[] = [];
 
-  const maskedMap: MaskedEnvMap = new Map();
-  const maskedKeys: string[] = [];
-
-  for (const [key, entry] of envMap.entries()) {
-    const sensitive =
-      isSensitiveKey(key, patterns) || additionalKeys.includes(key);
-
-    if (sensitive) {
-      maskedMap.set(key, {
-        ...entry,
-        value: maskValue(entry.value, visibleChars, maskChar),
-        masked: true,
-      });
-      maskedKeys.push(key);
+  for (const [key, entry] of map.entries()) {
+    if (isSensitiveKey(key, customPatterns)) {
+      const masked = maskValue(entry.value, showFirst);
+      maskedKeys.push({ key, original: entry.value, masked });
+      maskedMap.set(key, { ...entry, value: masked });
     } else {
-      maskedMap.set(key, { ...entry, masked: false });
+      maskedMap.set(key, entry);
     }
   }
 
-  return { maskedMap, maskedKeys };
+  const report: MaskReport = {
+    maskedKeys,
+    totalKeys: map.size,
+    maskedCount: maskedKeys.length,
+  };
+
+  return { map: maskedMap, report };
 }
 
-export function formatMaskReport(result: MaskResult): string {
-  const { maskedKeys } = result;
-  if (maskedKeys.length === 0) {
-    return 'Mask report: No sensitive keys detected.';
-  }
-  const lines = [`Mask report: ${maskedKeys.length} key(s) masked.`];
-  for (const key of maskedKeys) {
-    lines.push(`  - ${key}`);
+export function formatMaskReport(report: MaskReport): string {
+  const lines: string[] = [
+    `Mask Report: ${report.maskedCount} of ${report.totalKeys} key(s) masked.`,
+  ];
+  if (report.maskedKeys.length === 0) {
+    lines.push('  No sensitive keys detected.');
+  } else {
+    for (const entry of report.maskedKeys) {
+      lines.push(`  [MASKED] ${entry.key}: ${entry.masked}`);
+    }
   }
   return lines.join('\n');
 }

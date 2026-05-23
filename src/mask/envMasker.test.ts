@@ -1,78 +1,79 @@
 import { describe, it, expect } from 'vitest';
-import { EnvMap } from '../parser/types';
 import { isSensitiveKey, maskValue, maskEnvMap, formatMaskReport } from './envMasker';
+import type { EnvMap, EnvEntry } from '../parser/types';
 
-function makeMap(entries: Record<string, string>): EnvMap {
+function makeMap(pairs: Record<string, string>): EnvMap {
   const map: EnvMap = new Map();
-  for (const [key, value] of Object.entries(entries)) {
-    map.set(key, { value, comment: undefined, raw: `${key}=${value}` });
+  for (const [key, value] of Object.entries(pairs)) {
+    const entry: EnvEntry = { key, value, comment: undefined, raw: `${key}=${value}` };
+    map.set(key, entry);
   }
   return map;
 }
 
 describe('isSensitiveKey', () => {
-  it('detects common sensitive key names', () => {
-    expect(isSensitiveKey('DB_PASSWORD')).toBe(true);
-    expect(isSensitiveKey('API_SECRET')).toBe(true);
-    expect(isSensitiveKey('AUTH_TOKEN')).toBe(true);
-    expect(isSensitiveKey('PRIVATE_KEY')).toBe(true);
-  });
-
-  it('returns false for non-sensitive keys', () => {
-    expect(isSensitiveKey('APP_NAME')).toBe(false);
-    expect(isSensitiveKey('PORT')).toBe(false);
-    expect(isSensitiveKey('NODE_ENV')).toBe(false);
+  it('detects PASSWORD', () => expect(isSensitiveKey('DB_PASSWORD')).toBe(true));
+  it('detects TOKEN', () => expect(isSensitiveKey('ACCESS_TOKEN')).toBe(true));
+  it('detects SECRET', () => expect(isSensitiveKey('APP_SECRET')).toBe(true));
+  it('does not flag safe keys', () => expect(isSensitiveKey('APP_NAME')).toBe(false));
+  it('detects custom pattern', () => {
+    expect(isSensitiveKey('MY_PRIVATE_STUFF', ['PRIVATE_STUFF'])).toBe(true);
   });
 });
 
 describe('maskValue', () => {
-  it('fully masks value by default', () => {
+  it('fully masks a value', () => {
     expect(maskValue('supersecret')).toBe('********');
   });
-
-  it('keeps trailing visible chars when specified', () => {
-    const result = maskValue('supersecret', 3);
-    expect(result.endsWith('ret')).toBe(true);
-    expect(result.startsWith('***')).toBe(true);
+  it('shows first N chars', () => {
+    expect(maskValue('supersecret', 3)).toBe('sup********');
   });
-
-  it('returns empty string unchanged', () => {
+  it('handles empty string', () => {
     expect(maskValue('')).toBe('');
+  });
+  it('masks short values', () => {
+    expect(maskValue('abc')).toBe('***');
   });
 });
 
 describe('maskEnvMap', () => {
   it('masks sensitive keys and leaves others unchanged', () => {
     const map = makeMap({ DB_PASSWORD: 'secret123', APP_NAME: 'myapp', API_KEY: 'key-abc' });
-    const { maskedMap, maskedKeys } = maskEnvMap(map);
-
-    expect(maskedKeys).toContain('DB_PASSWORD');
-    expect(maskedKeys).toContain('API_KEY');
-    expect(maskedKeys).not.toContain('APP_NAME');
-    expect(maskedMap.get('APP_NAME')?.value).toBe('myapp');
-    expect(maskedMap.get('DB_PASSWORD')?.masked).toBe(true);
-    expect(maskedMap.get('APP_NAME')?.masked).toBe(false);
+    const { map: masked, report } = maskEnvMap(map);
+    expect(masked.get('APP_NAME')?.value).toBe('myapp');
+    expect(masked.get('DB_PASSWORD')?.value).not.toBe('secret123');
+    expect(masked.get('API_KEY')?.value).not.toBe('key-abc');
+    expect(report.maskedCount).toBe(2);
+    expect(report.totalKeys).toBe(3);
   });
 
-  it('respects additionalKeys option', () => {
-    const map = makeMap({ CUSTOM_FIELD: 'sensitive', APP_NAME: 'myapp' });
-    const { maskedKeys } = maskEnvMap(map, { additionalKeys: ['CUSTOM_FIELD'] });
-    expect(maskedKeys).toContain('CUSTOM_FIELD');
+  it('respects showFirst option', () => {
+    const map = makeMap({ SECRET_KEY: 'abcdefgh' });
+    const { map: masked } = maskEnvMap(map, { showFirst: 2 });
+    expect(masked.get('SECRET_KEY')?.value).toMatch(/^ab/);
+  });
+
+  it('returns empty masked list when no sensitive keys', () => {
+    const map = makeMap({ HOST: 'localhost', PORT: '5432' });
+    const { report } = maskEnvMap(map);
+    expect(report.maskedCount).toBe(0);
   });
 });
 
 describe('formatMaskReport', () => {
-  it('reports no sensitive keys when none found', () => {
-    const map = makeMap({ APP_NAME: 'myapp' });
-    const result = maskEnvMap(map);
-    expect(formatMaskReport(result)).toContain('No sensitive keys');
+  it('formats report with masked keys', () => {
+    const map = makeMap({ DB_PASSWORD: 'secret' });
+    const { report } = maskEnvMap(map);
+    const output = formatMaskReport(report);
+    expect(output).toContain('1 of 1');
+    expect(output).toContain('[MASKED]');
+    expect(output).toContain('DB_PASSWORD');
   });
 
-  it('lists masked keys in report', () => {
-    const map = makeMap({ DB_PASSWORD: 'secret', APP_NAME: 'myapp' });
-    const result = maskEnvMap(map);
-    const report = formatMaskReport(result);
-    expect(report).toContain('DB_PASSWORD');
-    expect(report).toContain('1 key(s) masked');
+  it('formats report with no masked keys', () => {
+    const map = makeMap({ HOST: 'localhost' });
+    const { report } = maskEnvMap(map);
+    const output = formatMaskReport(report);
+    expect(output).toContain('No sensitive keys detected');
   });
 });
