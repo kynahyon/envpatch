@@ -27,3 +27,13 @@ export interface PatchOptions {
   /** Dry run — compute result without applying */
   dryRun?: boolean;
 }
+
+/**
+ * Returns all entries from a PatchResult that match the given operation.
+ */
+export function filterEntriesByOperation(
+  result: PatchResult,
+  operation: PatchOperation
+): PatchEntry[] {
+  return result.entries.filter((entry) => entry.operation === operation);
+}
