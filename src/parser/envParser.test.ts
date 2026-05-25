@@ -43,4 +43,12 @@ describe('parseEnvContent', () => {
     const result = parseEnvContent(content, 'test.env');
     expect(result.entries[0].lineNumber).toBe(2);
   });
+
+  it('handles values containing "=" characters', () => {
+    const content = 'FOO=bar=baz\nURL=https://example.com?a=1&b=2';
+    const result = parseEnvContent(content, 'test.env');
+    expect(result.errors).toHaveLength(0);
+    expect(result.entries[0].value).toBe('bar=baz');
+    expect(result.entries[1].value).toBe('https://example.com?a=1&b=2');
+  });
 });
