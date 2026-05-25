@@ -53,6 +53,13 @@ describe('checkRequiredKeys', () => {
     const result = checkRequiredKeys(env, { keys: [] });
     expect(result.passed).toBe(true);
   });
+
+  it('treats whitespace-only value as missing when strictEmpty is true', () => {
+    const env = makeMap({ SECRET: '   ' });
+    const result = checkRequiredKeys(env, { keys: ['SECRET'], strictEmpty: true });
+    expect(result.passed).toBe(false);
+    expect(result.missing).toContain('SECRET');
+  });
 });
 
 describe('formatRequiredReport', () => {
